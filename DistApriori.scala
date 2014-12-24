@@ -393,7 +393,7 @@ object DistApriori {
    * @param supportThreshold support threshold
    * @param splitterPattern splitter pattern
    * @param optimization optimization method
-   * @param degree the degree of a node in hashtree
+   * @param degree the degree of a node in hashtree, only works in optimization: hashtree
    * @return frequent itemsets stored as `RDD[String]`
    */
   def run(
@@ -410,10 +410,10 @@ object DistApriori {
   }
 
   def run(
-           data: RDD[String],
-           supportThreshold: Double,
-           splitterPattern: String,
-           optimization: String): RDD[(String, Long)] = {
+      data: RDD[String],
+      supportThreshold: Double,
+      splitterPattern: String,
+      optimization: String): RDD[(String, Long)] = {
     new DistApriori().setSupportThreshold(supportThreshold)
       .setSplitterPattern(splitterPattern)
       .setOptimization(optimization)
