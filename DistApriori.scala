@@ -421,9 +421,9 @@ object DistApriori {
   }
 
   def run(
-           data: RDD[String],
-           supportThreshold: Double,
-           splitterPattern: String): RDD[(String, Long)] = {
+      data: RDD[String],
+      supportThreshold: Double,
+      splitterPattern: String): RDD[(String, Long)] = {
     new DistApriori().setSupportThreshold(supportThreshold)
       .setSplitterPattern(splitterPattern)
       .run(data)
