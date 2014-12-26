@@ -38,14 +38,14 @@ class DistApriori private (
 
   /** Set the support threshold. Support threshold must be defined on interval [0, 1]. Default: 0. */
   def setSupportThreshold(supportThreshold: Double): this.type = {
-    if(supportThreshold < 0 || supportThreshold > 1) {
+    if (supportThreshold < 0 || supportThreshold > 1) {
       throw new IllegalArgumentException("Support threshold must be defined on interval [0, 1]")
     }
     this.supportThreshold = supportThreshold
     this
   }
 
-  /** Set the splitter pattern within which we can split transactions into items. */
+  /** Set the splitter pattern within which we can split transactions into items. Default: " " */
   def setSplitterPattern(splitterPattern: String): this.type = {
     this.splitterPattern = splitterPattern
     this
@@ -56,7 +56,7 @@ class DistApriori private (
    * Default: trietree.
    */
   def setOptimization(optimization: String): this.type = {
-    if(optimization != DistApriori.OPTIMIZATION_NAIVE
+    if (optimization != DistApriori.OPTIMIZATION_NAIVE
       && optimization != DistApriori.OPTIMIZATION_HASHTREE
       && optimization != DistApriori.OPTIMIZATION_TRIETREE) {
       throw new IllegalArgumentException("Invalid optimization: " + optimization)
@@ -70,7 +70,7 @@ class DistApriori private (
    * but get a better performance. Default: 4096.
    */
   def setDegree(degree: Int): this.type = {
-    if(degree < 0) {
+    if (degree <= 0) {
       throw new IllegalArgumentException("Degree of nodes in hashtree must a be positive number.")
     }
     this.degree = degree
@@ -78,9 +78,9 @@ class DistApriori private (
   }
 
   /** Generate frequent 1-itemsets. */
-  def GenerateFrequent1Itemsets(
+  def generateFrequent1Itemsets(
       data: RDD[String],
-      minSupport: Int): RDD[(String, Long)] = {
+      minSupport: Double): RDD[(String, Long)] = {
     data.flatMap(record =>
       record.split(splitterPattern).map(item => (item, 1L)))
       .reduceByKey(_ + _).filter(_._2 >= minSupport)
@@ -90,7 +90,7 @@ class DistApriori private (
    * Generate (k + 1)-candidates itemsets by computing Cartesian product of
    * frequent k-itemsets with itself.
    */
-  def AprioriGen(frequentItemsets: RDD[(String, Long)], k: Int): RDD[String] = {
+  def aprioriGen(frequentItemsets: RDD[(String, Long)], k: Int): RDD[String] = {
     val sc = frequentItemsets.sparkContext
     val bcFrequentItemsets = sc.broadcast(frequentItemsets.collect())
 
@@ -103,8 +103,8 @@ class DistApriori private (
 
       val loop = new Breaks()
       loop.breakable(
-        while(i < k) {
-          if(items(i) != bcItems(i)) {
+        while (i < k) {
+          if (items(i) != bcItems(i)) {
             pos = i
             loop.break()
           }
@@ -112,7 +112,7 @@ class DistApriori private (
         }
       )
 
-      if(pos == k - 1 && items(pos).toInt < bcItems(pos).toInt) {
+      if (pos == k - 1 && items(pos).toInt < bcItems(pos).toInt) {
         candidateItemset = items.slice(0, pos + 1).mkString(splitterPattern)
         candidateItemset += splitterPattern
         candidateItemset += bcItems(pos)
@@ -124,21 +124,24 @@ class DistApriori private (
   }
 
   /** Build trietree with candidate itemsets. */
-  def buildTrietree(candidateItemsets: Array[String], k: Int, splitterPattern: String): TrieTreeNode = {
+  def buildTrietree(
+      candidateItemsets: Array[String],
+      k: Int,
+      splitterPattern: String): TrieTreeNode = {
     val trietreeRoot = new TrieTreeNode()
     var currentNode: Option[TrieTreeNode] = None
     var parentNode: Option[TrieTreeNode] = None
 
-    for(currentItemset <- candidateItemsets) {
+    for (currentItemset <- candidateItemsets) {
       // Insert items of candidate itemsets into hashtree.
       parentNode = None
       currentNode = Some(trietreeRoot)
-      for(item <- currentItemset.split(splitterPattern)) {
+      for (item <- currentItemset.split(splitterPattern)) {
         val children = currentNode.get.children
         parentNode = currentNode
         // If children of current node contains this item, get the child node of current node.
         // Else initialize a new node as the child node of current node.
-        if(children.contains(item)) {
+        if (children.contains(item)) {
           currentNode = children.get(item)
         } else {
           currentNode = Some(new TrieTreeNode())
@@ -160,19 +163,19 @@ class DistApriori private (
       trietreeRoot: TrieTreeNode,
       record: String,
       startIndex: Int): ArrayBuffer[String] = {
-    if(trietreeRoot.isLeafNode == true) {
+    if (trietreeRoot.isLeafNode == true) {
       trietreeRoot.itemsets
     } else {
-      val retVals = new ArrayBuffer[String]()
+      val retArr = new ArrayBuffer[String]()
       val items = record.split(splitterPattern)
-      for(i <- startIndex until items.length) {
+      for (i <- startIndex until items.length) {
         val item = items(i)
         val children = trietreeRoot.children
-        if(children.contains(item)) {
-          retVals ++= traverseTrietree(children.get(item).get, record, i + 1)
+        if (children.contains(item)) {
+          retArr ++= traverseTrietree(children.get(item).get, record, i + 1)
         }
       }
-      retVals
+      retArr
     }
   }
 
@@ -188,12 +191,12 @@ class DistApriori private (
     }
 
     def leafToBranch(node: HashTreeNode): Unit = {
-      for(i <- 0 until degree) {
+      for (i <- 0 until degree) {
         node.children(i) = new HashTreeNode(new Array[HashTreeNode](degree))
         node.children(i).level = node.level + 1
       }
       node.isLeafNode = false
-      for(currentItemset <- node.candidateItemsets) {
+      for (currentItemset <- node.candidateItemsets) {
         val items = currentItemset.split(splitterPattern)
         val h = hash(items(node.level).toInt)
         val child = node.children(h)
@@ -207,17 +210,17 @@ class DistApriori private (
     }
 
     val hashtreeRoot = new HashTreeNode(new Array[HashTreeNode](degree))
-    for(currentItemset <- candidateItemsets) {
+    for (currentItemset <- candidateItemsets) {
       val items = currentItemset.split(splitterPattern)
       var currentNode = hashtreeRoot
       // If current node is not leaf node, find the child node of current node according to hash value.
-      while(currentNode.isLeafNode == false) {
+      while (currentNode.isLeafNode == false) {
         currentNode = findNextNode(currentNode, items)
       }
       // If there are more than degree candidate itemsets in current node,
       // we compute hash values of itemsets in current node, initilize children nodes of it,
       // and transfer itemsets to children nodes of it. Then we mark current node as not a leaf node.
-      while(currentNode.candidateItemsets.length >= degree && currentNode.level < k) {
+      while (currentNode.candidateItemsets.length >= degree && currentNode.level < k) {
         leafToBranch(currentNode)
         currentNode = findNextNode(currentNode, items)
       }
@@ -240,7 +243,7 @@ class DistApriori private (
       var retVal = true
       val loop = new Breaks()
 
-      loop.breakable (
+      loop.breakable(
         for (i <- 0 until items.length) {
           val item = items(i)
           if (i < prefix.length) {
@@ -260,25 +263,25 @@ class DistApriori private (
       retVal
     }
 
-    val retVals = new ArrayBuffer[String]()
+    val retArr = new ArrayBuffer[String]()
     // If current node is a leaf node, we collect those candidate itemsets in this node
     // which are subsets of current record.
     // Else we recursively find all candidate itemsets in sub-record.
     if (node.isLeafNode == true) {
       for (currentItemset <- node.candidateItemsets) {
         if (isSubset(currentItemset, record, prefix) == true) {
-          retVals.append(currentItemset)
+          retArr.append(currentItemset)
         }
       }
     } else {
       if (prefix.length < k && record.length >= 1) {
         val subRecord = record.slice(1, record.length)
         val q = node.children(hash(record(0).toInt))
-        retVals ++= traverseHashtree(subRecord, q, prefix :+ record(0), k)
-        retVals ++= traverseHashtree(subRecord, node, prefix, k)
+        retArr ++= traverseHashtree(subRecord, q, prefix :+ record(0), k)
+        retArr ++= traverseHashtree(subRecord, node, prefix, k)
       }
     }
-    retVals
+    retArr
   }
 
   /**
@@ -286,19 +289,19 @@ class DistApriori private (
    * count support of candidate itemset on each worker. Then we reduce all results and
    * filter out itemsets with support no less than minimum support.
    */
-  def GenerateFrequentItemsets (
+  def generateFrequentItemsets(
       data: RDD[String],
       bcCandidateItemsets: Array[String],
-      minSupport: Int): RDD[(String, Long)] = {
+      minSupport: Double): RDD[(String, Long)] = {
     data.flatMap(record => {
       val items = record.split(splitterPattern)
-      for(candidateItemset <- bcCandidateItemsets) yield {
+      for (candidateItemset <- bcCandidateItemsets) yield {
         var mismatch = false
         val splittedCandidateItemset = candidateItemset.split(splitterPattern)
 
         val loop = new Breaks()
         loop.breakable(
-          for(item <- splittedCandidateItemset) {
+          for (item <- splittedCandidateItemset) {
             // If a item of candidate itemset do not appear in data, set mismatch true and break.
             if(!items.contains(item)) {
               mismatch = true
@@ -307,7 +310,7 @@ class DistApriori private (
           }
         )
 
-        if(mismatch) {
+        if (mismatch) {
           (splittedCandidateItemset.mkString(splitterPattern), 0L)
         } else {
           (splittedCandidateItemset.mkString(splitterPattern), 1L)
@@ -317,11 +320,11 @@ class DistApriori private (
   }
 
   /**
-   * Compute the minimum support according to support the threshold.
+   * Compute the minimum support according to the support threshold.
    * Sort records of data in ascending order.
    */
   def run(data: RDD[String]): RDD[(String, Long)] = {
-    val minSupport = (supportThreshold * data.count()).toInt
+    val minSupport = supportThreshold * data.count()
     val sortedData = data.map(record =>
       record.split(splitterPattern).sortWith(_.toInt < _.toInt).mkString(splitterPattern)
     )
@@ -329,15 +332,15 @@ class DistApriori private (
   }
 
   /** Implementation of DistApriori. */
-  def run(data: RDD[String], minSupport: Int): RDD[(String, Long)] = {
+  def run(data: RDD[String], minSupport: Double): RDD[(String, Long)] = {
     var k = 1
     val sc = data.sparkContext
-    var frequentItemsets = GenerateFrequent1Itemsets(data, minSupport).persist()
+    var frequentItemsets = generateFrequent1Itemsets(data, minSupport).persist()
     var retRDD = frequentItemsets
 
-    while(frequentItemsets.count() != 0) {
+    while (frequentItemsets.count() != 0) {
       k = k + 1
-      val candidateItemsets = AprioriGen(frequentItemsets, k - 1).collect()
+      val candidateItemsets = aprioriGen(frequentItemsets, k - 1).collect()
 
       optimization match {
         case DistApriori.OPTIMIZATION_TRIETREE => {
@@ -364,7 +367,7 @@ class DistApriori private (
         case DistApriori.OPTIMIZATION_NAIVE => {
           val bcCandidateItemsets = sc.broadcast(candidateItemsets)
           frequentItemsets =
-            GenerateFrequentItemsets(data, bcCandidateItemsets.value, minSupport).persist()
+            generateFrequentItemsets(data, bcCandidateItemsets.value, minSupport).persist()
         }
 
       }
@@ -389,12 +392,12 @@ object DistApriori {
 
   /**
    * Run DistApriori using the given set of parameters.
-   * @param data transactional datasets stored as `RDD[String]`
+   * @param data transactional dataset stored as `RDD[String]`
    * @param supportThreshold support threshold
    * @param splitterPattern splitter pattern
    * @param optimization optimization method
    * @param degree the degree of a node in hashtree, only works in optimization: hashtree
-   * @return frequent itemsets stored as `RDD[String]`
+   * @return frequent itemsets stored as `RDD[(String, Long)]`
    */
   def run(
       data: RDD[String],

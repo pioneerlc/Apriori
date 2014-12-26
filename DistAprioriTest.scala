@@ -30,25 +30,12 @@ object DistAprioriTest {
     val endTime = currentTime
     val totalTime: Double = endTime - startTime
 
-    for(i <- frequentItemsets.collect()) {
-      println("key = " + i._1 + "value = " + i._2)
-    }
 
-    val anotherStartTime = currentTime
-    val check = LocalApriori.run(data, supportThreshold, splitterPattern)
-    val anotherEndTime = currentTime
-
-    val anotherTotalTime: Double = anotherEndTime - anotherStartTime
 
     println("---------------------------------------------------------")
     println("This program totally took " + totalTime/1000 + " seconds.")
     println("Number of frequent itemsets using DistApriori= " + count)
     println("---------------------------------------------------------")
-    println()
-    println("---------------------------------------------------------")
-    println("This program totally took " + anotherTotalTime/1000 + " seconds.")
-    println("Number of frequent itemsets using LocalApriori= " + check.length)
-    println("---------------------------------------------------------")
 
-  } //end of main
+  }
 }
